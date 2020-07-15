@@ -1,0 +1,116 @@
+/* Raleway Font
+----------------------------------------------------------------- */
+@import url("https://fonts.googleapis.com/css?family=Raleway:400,600&display=swap");
+
+/* Headers
+----------------------------------------------------------------- */
+
+h1{
+	font-size: 30px !important;
+	font-weight: 700 !important;
+	margin-bottom: 16px !important;
+}
+h2{
+	font-size: 28px !important;
+	font-weight: 600 !important;
+	margin-bottom: 16px !important;
+}
+h3{
+	font-size: 26px !important;
+	font-weight: 600 !important;
+	margin-bottom: 16px !important;
+}
+h4{
+	font-size: 24px !important;
+	font-weight: 600 !important;
+	margin-bottom: 16px !important;
+}
+hr{
+	border-width: 3px;
+}
+
+/* Title
+----------------------------------------------------------------- */
+.title.toc-ignore{
+	font-size: 34px !important;
+	margin: 0 auto;
+	padding-top: 1.5em;
+	padding-bottom: 2em;
+	border: 0;
+	text-align: center;
+	border-bottom-style: double;
+}
+
+/* Body
+----------------------------------------------------------------- */
+body{
+	/*font-family: Caslon;*/
+	font-family: Raleway !important;
+	/*color: #0d346e;*/
+}
+
+
+/* paragraph
+----------------------------------------------------------------- */
+.paragraph{
+	text-align: justify;
+	font-size: 20px;
+	line-height: 30px;
+	margin-bottom: 32px;
+	margin-top: 0;
+
+}
+
+/* Code Chunks
+---------------------------------------------------------------- */
+
+.hljs{
+	font-family: Menlo !important;
+}
+
+code{
+	font-family: Menlo !important;
+}
+
+/* Images
+---------------------------------------------------------------- */
+
+img{
+	width: 97%;
+}
+
+/* Meta Info
+---------------------------------------------------------------- */
+.date{
+	display: inline-block;
+	left: 2%;
+	position: relative;
+	text-align: center;
+	padding-top: .5em;
+	padding-bottom: 0;
+	color: #616363;
+	font-family: Raleway;
+	font-size: 15px;
+}
+
+.tags{
+	display: inline-block;
+	left: 18%;
+	position: relative;
+	text-align: center;
+	color: #616363;
+	font-family: Raleway;
+	font-size: 15px;
+}
+
+.time{
+	display: inline-block;
+	left: 33%;
+	position: relative;
+	text-align: center;
+	color: #616363;
+	font-family: Raleway;
+	font-size: 15px;
+}
+
+
