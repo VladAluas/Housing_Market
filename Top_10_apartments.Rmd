@@ -1,0 +1,216 @@
+---
+title: "Top 10 Apartments"
+output: html_document
+css: article.css
+---
+
+<div class = "date">
+**`r format(Sys.time(), '%d %b %Y')`**
+</div>
+
+<div class = "tags">
+
+</div>
+
+
+<div class = "time">
+
+</div>
+
+
+```{r setup_general, include=FALSE}
+knitr::opts_chunk$set(echo = FALSE, comment = "#>", collapse = TRUE, warning = FALSE, message = FALSE)
+```
+
+```{r setup_libraries, include=FALSE}
+library(tidyverse)
+library(vroom)
+library(rvest)
+library(kableExtra)
+library(doBy)
+```
+
+```{r functions}
+webs <- function(url, max_pages){
+  webs <- vector("list", max_pages)
+  for(i in seq_along(1:max_pages)){
+    webs[[i]] <- paste(url, i, sep = "")
+  }
+  webs
+}
+
+table_func <- function(x){
+  
+  df <- as_tibble_col(column_name = "Web", x = NULL)
+  
+  for (i in seq(x)) {
+    
+    df <- df %>% rbind(x[[i]] %>% tibble())
+  
+    }
+
+  df
+}
+
+
+```
+
+
+# Hey there Miha!
+
+<div class="paragraph">
+
+I love you and since we are going to spend the rest of our live together, we will need to find the awesomest apartment on the market. In Order to do this I have created this document that will allow us to do just that. We can see the top something places on the market, we can decide on the exact numbers later. 
+
+</div>
+
+# Rules for filtering data
+
+<div class="paragraph">
+
+Here is the list of rules we have established in creating the top:
+
+  - The built area is larger than 60 m$^2$
+  - The building is constructed after 2010
+  - The appartment has a parking place
+  - The price is below €100.000
+  - The appartments is prefferably located on the last three floors of the building
+  - The apartments is located in Cluj-Napoca and not in the metropolitan area
+  
+  - Once we have this list we will use the price / m$^2$ to decide the top ten
+  
+</div>
+
+<div class="paragraph">
+
+All well and good? Let's see them. Drum roll please!!!
+
+</div>
+
+# Ta-Da!!!
+
+```{r data_ingestion, warning=FALSE, results="hide"}
+last_week <- seq.Date(from = Sys.Date() - 7, to = Sys.Date(), by = 1) %>% 
+  as_tibble() %>% 
+  mutate(Days = weekdays(value),
+         value = str_replace_all(as.character(value), "-", "_")) %>%
+  filter(Days == "Tuesday") %>%
+  select(value)
+
+last_tuesday <- last_week$value
+
+df <- read_csv(paste(getwd(), "/Datasets/Data_Imobiliare_Apartamente_", last_tuesday, ".csv", sep = ""))
+
+rm(last_tuesday, last_week)
+```
+
+```{r data_cleaning, warning=FALSE}
+
+# First of we need to clean the data and make sure we have what we need
+
+# We will start with Usable area
+# We will simply add it if it's missing from Built area
+
+df <- df %>% mutate(`Usable Area` = ifelse(is.na(`Usable Area`), `Built Area`, `Usable Area`))
+
+# Next is the year of construction, not much to do there, neither to the next variable, parking place
+
+# Now we, ca decide how many floor below the top floor the apartment is. Let's get the building height and see where the apartment is located
+
+df <- df %>% mutate(`Floor Position` = as.numeric(str_extract(`Height Regiment`, "[0-9]+")) - Floor)
+
+# We also need the price / sqm
+
+df <- df %>% 
+  mutate(`Price / sqm` = `Total Price` / `Usable Area`)
+```
+
+```{r web_adresses, warning=FALSE}
+# In here we will get all the web links so we can add them to the info and create a hyperlink
+
+main_url <- "https://www.imobiliare.ro/vanzare-apartamente/cluj?id=175690324&pagina="
+
+max_pages <- 350
+
+# Transformation ----------------------------------------------------------
+
+# 1. We need a list of all the URL's
+web_page_list <- webs(main_url, max_pages) 
+
+# 2. We need to read the HTML code source for all the pages. Since the `read_html()` function does not work with lists, we will use `lapply()`
+
+web_html <- lapply(web_page_list, function(x) read_html(x))
+
+# 3. To get the actual information, you need to access a different link, so we will extract those links and repeat the process for the new list
+
+web_page_list_final <- lapply(web_html, function (x) html_nodes(x, "[itemprop='name']") %>% html_attr("href")) %>% unique()
+
+df_int <- table_func(web_page_list_final)
+
+rm(web_page_list, web_page_list_final, web_html)
+```
+
+```{r website_df, warning=FALSE}
+
+df_int2 <- df_int %>%
+  renameCol(".", "Website") %>%
+  mutate(ID = as.character(str_extract_all(Website, "X[A-Z0-9]+"))) %>%
+  as_tibble()
+```
+
+```{r integrated_df, warning=FALSE}
+df <- df %>% left_join(df_int2, by = "ID") %>% distinct()
+```
+```{r filters, warning=FALSE, results="hide"}
+df_final <- df %>%
+  filter(`Usable Area` > 60, 
+         `An construcţie` > 2010, 
+         !is.na(`Parking Places`), 
+         `Total Price` < 100000,
+         `Floor Position` < 3,
+         !str_detect(Website, "baciu"),
+         !str_detect(Website, "apahida"),
+         !str_detect(Website, "floresti"),
+         !str_detect(Website, "becas"),
+         !str_detect(Website, "exterior"),
+         !str_detect(Website, "sopor"),
+         !str_detect(Website, "sannicoara")) %>%
+  arrange(`Price / sqm`)
+```
+
+## Top 10
+
+```{r top_10_list, warning=FALSE}
+df_final %>%
+  select(ID, Compartments, Floor, Bathrooms, `Usable Area`, `An construcţie`, `Total Price`, `Price / sqm`, Website) %>%
+  top_n(10) %>%
+  kable(format = "html", caption = "Oferta Apartamente") %>%
+  kable_styling(bootstrap_options = c("striped", "hover", "condensed", "responsive"), fixed_thead = T) %>%
+  scroll_box(height = "400px")
+  
+```
+
+## Full list
+  
+```{r full_list, warning=FALSE}
+df_final %>%
+  select(ID, Compartments, Floor, Bathrooms, `Usable Area`, `An construcţie`, `Total Price`, `Price / sqm`, Website) %>%
+  kable(format = "html", caption = "Oferta Apartamente") %>%
+  kable_styling(bootstrap_options = c("striped", "hover", "condensed", "responsive"), fixed_thead = T) %>%
+  scroll_box(height = "400px")
+  
+```
+
+
+<div class="paragraph">
+
+I tried elimintaing apartments that are not from **Cluj** however there some still might have slipped trough.
+
+Just click the link and it should take you to the apartment.
+
+**I LOVE YOU**
+
+</div>
+  
+  
+  
