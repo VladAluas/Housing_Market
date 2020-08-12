@@ -193,14 +193,11 @@ df_title <- title %>%
   distinct() %>%
   separate(value, into = c("ID", "Title"), sep = ":")
 
-<<<<<<< HEAD
 df_website <- website %>%
   renameCol(".", "Website") %>%
   mutate(ID = as.character(str_extract_all(Website, "X[A-Z0-9]+"))) %>%
   as_tibble()
 
-=======
->>>>>>> 6ca07d0d19faf1efc65558ef44067ecc92c6755b
 # Need to rename the columns to eliminate Romanian characters or it will crash the IDE
 
 names(df_desc)   <- c("ID", "Bathrooms", "Balconies", "Kitchens", "Rooms", "Terraces",  "Built Area (Ground Cver)", "Developed Area", "Terraces Area", "Usable Area")
@@ -223,7 +220,7 @@ df <- df_title %>%
          `Developed Area`           = as.numeric(str_extract(`Developed Area`, "[0-9]+")),
          `Terraces Area`            = as.numeric(str_extract(`Terraces Area`, "[0-9]+")),
          `Usable Area`              = as.numeric(str_extract(`Usable Area`, "[0-9]+")),
-         `Land area`                = as.numeric(str_extract(`Land area`, "[0-9]+")),
+         #`Land area`                = as.numeric(str_extract(`Land area`, "[0-9]+")),
          `Balconies`                = as.numeric(str_extract(`Balconies`, "[0-9]+")),
          `Type`                     = "Casa proprie")
 
