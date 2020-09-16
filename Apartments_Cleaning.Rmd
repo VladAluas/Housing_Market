@@ -1,0 +1,177 @@
+---
+title: "Housing Market Cleaning - Apartments"
+output: html_document
+css: article.css
+---
+
+<div class = "date">
+**`r format(Sys.time(), '%d %b %Y')`**
+</div>
+
+<div class = "tags">
+
+</div>
+
+
+<div class = "time">
+
+</div>
+
+
+```{r setup_general, include=FALSE}
+knitr::opts_chunk$set(echo = FALSE, comment = "#>", collapse = TRUE)
+```
+
+```{r setup_libraries}
+
+library(dplyr)
+library(purrr)
+library(tidyr)
+library(kableExtra)
+```
+
+<div class = "paragraph">
+
+In this article I will try to disentangle and clean the data taken from the [imobiliare.ro](imobiliare.ro) website. The data is messy and I would like to use this document to record all I have done in order to clean it so it can be discussed later. Before all that, I would like to explain a little bit how I acquired the data and what problems I have encountered in doing so. This might help clarify some of the problems and inconsistencies withing the data.
+
+</div>
+
+## The data
+
+<div class = "paragraph">
+
+The data comes from the website [imobiliare.ro](imobiliare.ro) and I used a web scrapping algorithm to get the data. The algorithm can be found at the following [GitHub repo](https://github.com/VladAluas/Housing_Market). Because it is easier to keep the data and the code separate and roll something back should it be the case, I have decided to keep the data in a separate [repo](https://github.com/VladAluas/Housing_Market_Datasets). Here you can see all the datasets I have scrapped from the website.
+
+</div>
+
+<div class = "paragraph">
+
+As you might have noticed the data was downloaded once a week, specifically on Tuesday. There is no particular reasoning for that, I just wanted to download the data once a week and the first download was on Tuesday, so I continued with that.
+
+</div>
+
+## Data Cleaning Logic
+
+#### Data ingestion
+
+```{r data_ingestion}
+df_list <- map(list.files(paste(getwd(), "_Datasets", sep = ""), pattern = "Apartamente", full.names = TRUE), read.csv)
+```
+
+#### Integrating all the datasets into one
+
+<div class = "paragraph">
+
+There are some problems with the data that I would like to address and list the steps I consider as necessary to clean the data.
+
+1. The web scrapping script suffered some changes over time and the columns differ slightly across the files. Most problematic are the following columns:
+  * **Construction Year**: At first I let the column name in Romanian and that resulted in some problems later due to my OS not recognizing the characters so I decided to change the name to English
+  * **Parking Spots**: This column at first appears as **Parking Places**. I cannot recall why the change in name occurred, however, we will need to correct this as well.
+  * **Website**: In the latest datasets I've added a column containing the web page in which one can see the offer. I will eliminate it since it does not help in our analysis.
+  
+I will eliminate the Website column since it will be easier to standardize the names afterwards.
+
+</div>
+  
+```{r eliminate_Website}
+
+for (i in 13:length(df_list)) {
+
+  df_list[[i]] <- df_list[[i]] %>% select(-Website)
+    
+}
+
+rm(i)
+```
+<div class = "paragraph">  
+  
+Now, Let's standardize the names of the columns. I will take them from the last dataset in the list.
+
+<div>
+
+```{r standardize_columns}
+col_names <- names(df_list[[length(df_list)]])
+
+for (i in 1:length(df_list)) {
+  
+  names(df_list[[i]]) <- col_names
+  
+}
+
+rm(col_names, i)
+```
+
+<div class = "paragraph">
+
+Now the datasets are standardized so we can append them in one data frame.
+
+</div>
+
+```{r flatten_the_list}
+df <- map_df(df_list, rbind)
+```
+
+#### Cleaning
+
+<div class="paragraph">
+
+All good now, we have the data in one data frame. Let's proceed with cleaning the data.
+
+First of all, I think I will start with cleaning all the white space in the character column, also tabs, new lines, etc.
+
+I will also standardize the date because at the moment it does not have a usable or standard format.
+
+</div>
+
+```{r trimws_date}
+df <- df %>%
+  mutate(across(where(is.character), trimws),
+         Date = lubridate::parse_date_time(Date, orders = c("ymd", "dmy")))
+```
+
+<div class = "paragraph">
+
+Now that we have solved this problem, the next one I would like to address is the problem of the data types. Let's take a look at the data types currently in the data set. and then we can discuss them further.
+
+</div>
+
+```{r df_str}
+df %>%
+  str() %>%
+  kable(format = "html") %>%
+  kable_styling(bootstrap_options = c("striped", "hover", "condensed", "responsive"), fixed_thead = T) %>%
+  scroll_box(height = "400px")
+```
+
+<div class = "paragraph">
+
+Cool, but how is this helpful? Simple, some of the columns here contain more information than just the characters that are in there so we will need to transform each column in the appropriate type.
+
+Mostly we will transform some character and numeric data into factors and we will add levels to those factors.
+
+This will be important later when we will create machine learning algorithms over the data, therefore we will deal with it here.
+
+After that we will need to see what we do with empty values and duplicates. But one thing at the time, let's start establishing the factors.
+
+</div>
+
+```{r}
+df %>% str()
+```
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
