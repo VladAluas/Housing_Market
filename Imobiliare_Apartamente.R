@@ -14,7 +14,7 @@ library(doParallel)
 
 main_url <- "https://www.imobiliare.ro/vanzare-apartamente/cluj?id=175690324&pagina="
 
-max_pages <- 350
+max_pages <- 334
 
 num_cores <- parallel::detectCores() - 1
 
@@ -116,14 +116,18 @@ web_page_list_final <- web_page_list_final %>% unlist() %>% unique()
 
 #Now that we have the new list with the final web addresses, we will just need to read the HTML's of the 8000 announcements
 
-doParallel::registerDoParallel(cl) 
-
-
-system.time(web_html_final <- parallel::parLapply(cl, web_page_list_final, function(x) as.character(xml2::read_html(x))))
-
-stopImplicitCluster()
+#doParallel::registerDoParallel(cl) 
+#
+#
+#system.time(web_html_final <- parallel::parLapply(cl, web_page_list_final, function(x) as.character(xml2::read_html(x))))
+#
+#stopImplicitCluster()
+#
+#rm(web_html, web_page_list, web_page_list_final, cl)
 
 system(web_html_final <- lapply(web_html_final, read_html))
+
+system(web_html_final <- lapply(web_page_list_final, read_html))
 
 
 
