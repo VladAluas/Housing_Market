@@ -19,7 +19,7 @@ css: article.css
 
 
 ```{r setup_general, include=FALSE}
-knitr::opts_chunk$set(echo = FALSE, comment = "#>", collapse = TRUE)
+knitr::opts_chunk$set(echo = FALSE, comment = "#>", collapse = TRUE, message = FALSE)
 ```
 
 ```{r setup_libraries}
@@ -27,12 +27,13 @@ knitr::opts_chunk$set(echo = FALSE, comment = "#>", collapse = TRUE)
 library(dplyr)
 library(purrr)
 library(tidyr)
+library(stringr)
 library(kableExtra)
 ```
 
 <div class = "paragraph">
 
-In this article I will try to disentangle and clean the data taken from the [imobiliare.ro](imobiliare.ro) website. The data is messy and I would like to use this document to record all I have done in order to clean it so it can be discussed later. Before all that, I would like to explain a little bit how I acquired the data and what problems I have encountered in doing so. This might help clarify some of the problems and inconsistencies withing the data.
+In this article I will try to disentangle and clean the data taken from the [imobiliare.ro](imobiliare.ro) website. The data is messy and I would like to use this document to record all I have done in order to clean it so it can be discussed later. Before all that, I would like to explain a little bit how I acquired the data and what problems I have encountered in doing so. This might help clarify some of the problems and inconsistencies within the data.
 
 </div>
 
@@ -47,6 +48,8 @@ The data comes from the website [imobiliare.ro](imobiliare.ro) and I used a web 
 <div class = "paragraph">
 
 As you might have noticed the data was downloaded once a week, specifically on Tuesday. There is no particular reasoning for that, I just wanted to download the data once a week and the first download was on Tuesday, so I continued with that.
+
+The last data download was on the 29~th~ of September. The website changed it's structure shortly after that and I will need to adjust the the web scrapping algorithm to do so. I did not have time to deal with it at the moment. When I will be able to tackle that I will add more data.
 
 </div>
 
@@ -109,6 +112,8 @@ Now the datasets are standardized so we can append them in one data frame.
 
 ```{r flatten_the_list}
 df <- map_df(df_list, rbind)
+
+rm(df_list)
 ```
 
 #### Cleaning
@@ -139,8 +144,7 @@ Now that we have solved this problem, the next one I would like to address is th
 df %>%
   str() %>%
   kable(format = "html") %>%
-  kable_styling(bootstrap_options = c("striped", "hover", "condensed", "responsive"), fixed_thead = T) %>%
-  scroll_box(height = "400px")
+  kable_styling(bootstrap_options = c("striped", "hover", "condensed", "responsive"), fixed_thead = T)
 ```
 
 <div class = "paragraph">
@@ -155,17 +159,109 @@ After that we will need to see what we do with empty values and duplicates. But 
 
 </div>
 
-```{r}
+<div class = "paragraph">
+
+The factors are the character columns that have an implied order. In this case they would be **Compartments** and **Comfort**. I will need to transform them before continuing, and give them the proper order. The columns will have the following order, from the most import to the least. You can find more about the classifications in [here](https://www.storia.ro/blog/ghidimobiliar/decomandat-semidecomandat-nedecomandat-circular-open-space-grade-de-confort-ce-inseamna-avantaje-si-dezavantaje/).
+
+  * **Compartments**:
+    - decomandat				
+    - semidecomandat				
+    - circular				
+    - nedecomandat				
+    - vagon
+    
+    
+  * **Comfort**
+    - lux
+    - 1
+    - 2
+    - 3
+  
+  
+I also need to change a little bit some of the record. For example "vagon" is the alternative naming for "nedecomandat" so I will convert it. Then we can create the factors.
+
+</div>
+
+```{r factor_col}
+comp_fct <- c("decomandat", "circular", "semidecomandat", "nedecomandat")
+comf_fct <- c("lux", "1", "2", "3")
+
+
+df <- df %>% 
+  mutate(Compartments = ifelse(Compartments == "vagon", "nedecomandat", Compartments),
+         Compartments = factor(Compartments, levels = comp_fct),
+         Comfort      = factor(Comfort,      levels = comf_fct))
+
+rm(comp_fct, comf_fct)
+```
+
+<div class = "paragraph">
+
+Another thing that we need to change is the fact the the height regiment of the building needs to be changed. At the moment the format is something like this **"S+P+21E"** meaning that the building has a basement (S), a ground floor (P) and twenty one stories on top of that (21E). It would be useful to have just the numerical value so we can better compute this variable in the analysis.
+
+</div>
+
+```{r height_regiment}
+
+df <- df %>%
+  mutate(Height.Regiment = as.numeric(str_extract(Height.Regiment, "[0-9]+")))
+```
+
+##### Missing Values
+
+<div class = "paragraph">
+
+Now that we have settled the data types, we will need to focus on missing values. There are some pretty simple ones that we can tackle at first, **Garages** and **Parking.Spots**. If it's a **NA** we will just add a 0 as its fairly accurate to consider that not all apartments will have a parking spot or a garage and people will not mention them.
+
+</div>
+
+```{r missing_gar_pk}
+df <- df %>%
+  mutate(Garages = ifelse(is.na(Garages), 0, Garages),
+         Parking.Spots = ifelse(is.na(Parking.Spots), 0, Parking.Spots))
+```
+
+```{r include=FALSE}
 df %>% str()
 ```
 
+<div class = "paragraph">
 
+The next part that I would like to clean would be the building type (Type). In Cluj, you can have apartments in two kinds of buildings, apartment buildings, usually the buildings that were built after 1960's, 1970's, or you can have your apartment in a house, ish. These are former manor houses built until World War II.
 
+Another fact that can help us fill in the missing values for this variable, is the geographical location. Usually the manor houses tend to be concentrated in the city center and a few neighborhoods and the apartment buildings can be found mostly in peripheral neighborhoods. This is not absolute, of course, there are several apartment buildings, in the middle of the city center (quite ugly ones since they were built by the communists) and you can have manor houses that encompass multiple apartments in areas where you can also find apartment buildings (Marasti near Fabricii is one such area or Gheorgheni has several examples).
 
+</div>
 
+<div class="paragraph">
 
+So, in order to clean this variable we will use the following rules:
+  
+  1. If a building is built after 1970's I will consider it is a apartment building (Construction.Year > 1970)
+  2. I will create a list of areas that are most likely to have manor houses and if the title contains any of the areas, I will consider it a manor house (casa/vila)
+  3. If the title contains "bloc de apartamente" (apartment building) I will classify it as such. The same goes for "casa / vila" manor house.
+  4. Another criterion that I would like to add is the fact that Penthouses where not a thing before WWII, or 2000 in Romania if we are honest, therefore if the title contains the word Penthouse, I will classify it as an apartment building
+  
+The items are in the logical order of importance. If one of the previous steps allow us to identify the building Type, I will not continue with the others. Also, since according to real estate agents Cluj-Napoca only has a central area or an semi-central area, I will eliminate the Titles containing the word "semicentral" from the list that includes properties in the city centre since they can be on the outskirts as we as near the city centre, therefore the word has not value for analysis.
 
+</div>
 
+<div class = "paragraph">
+
+**1. Buildings newer that 1970**
+
+</div>
+
+```{r}
+centre <- c("horea", "central", "centru", "andrei muresanu", "gruia")
+centre <- str_c(centre, collapse = "|")
+
+df <- df %>% filter(is.na(Type), 
+              str_detect(tolower(Title), centre),
+              !str_detect(tolower(Title), "semicentral"),
+              is.na(Construction.Year)) %>% 
+  mutate(Type = "casa/vila")
+```
 
 
 
