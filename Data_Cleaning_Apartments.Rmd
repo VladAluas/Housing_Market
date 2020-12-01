@@ -1,0 +1,315 @@
+---
+title: "Housing Market Cleaning - Apartments"
+output: html_document
+css: article.css
+---
+
+<div class = "date">
+**`r format(Sys.time(), '%d %b %Y')`**
+</div>
+
+<div class = "tags">
+
+</div>
+
+
+<div class = "time">
+
+</div>
+
+
+```{r setup_general, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE, comment = "#>", collapse = TRUE, message = FALSE)
+```
+
+```{r setup_libraries}
+
+library(dplyr)
+library(purrr)
+library(tidyr)
+library(stringr)
+library(kableExtra)
+```
+
+<div class = "paragraph">
+
+In this article I will try to disentangle and clean the data taken from the [imobiliare.ro](imobiliare.ro) website. The data is messy and I would like to use this document to record all I have done in order to clean it so it can be discussed later. Before all that, I would like to explain a little bit how I acquired the data and what problems I have encountered in doing so. This might help clarify some of the problems and inconsistencies within the data.
+
+</div>
+
+## The data
+
+<div class = "paragraph">
+
+The data comes from the website [imobiliare.ro](imobiliare.ro) and I used a web scrapping algorithm to get the data. The algorithm can be found at the following [GitHub repo](https://github.com/VladAluas/Housing_Market). Because it is easier to keep the data and the code separate and roll something back should it be the case, I have decided to keep the data in a separate [repo](https://github.com/VladAluas/Housing_Market_Datasets). Here you can see all the datasets I have scrapped from the website.
+
+</div>
+
+<div class = "paragraph">
+
+As you might have noticed the data was downloaded once a week, specifically on Tuesday. There is no particular reasoning for that, I just wanted to download the data once a week and the first download was on Tuesday, so I continued with that.
+
+The last data download was on the 29~th~ of September. The website changed it's structure shortly after that and I will need to adjust the the web scrapping algorithm to do so. I did not have time to deal with it at the moment. When I will be able to tackle that I will add more data.
+
+</div>
+
+<div class = "paragraph">
+
+I will expose the code I have used to clean the data so it can be reproduced or discussed at a later date.
+
+</div>
+
+## Data Cleaning Logic
+
+#### Data ingestion
+
+```{r data_ingestion}
+df_list <- map(list.files(paste(getwd(), "_Datasets", sep = ""), pattern = "Apartamente", full.names = TRUE), read.csv)
+```
+
+#### Integrating all the datasets into one
+
+<div class = "paragraph">
+
+There are some problems with the data that I would like to address and list the steps I consider as necessary to clean the data.
+
+1. The web scrapping script suffered some changes over time and the columns differ slightly across the files. Most problematic are the following columns:
+  * **Construction Year**: At first I let the column name in Romanian and that resulted in some problems later due to my OS not recognizing the characters so I decided to change the name to English
+  * **Parking Spots**: This column at first appears as **Parking Places**. I cannot recall why the change in name occurred, however, we will need to correct this as well.
+  * **Website**: In the latest datasets I've added a column containing the web page in which one can see the offer. I will eliminate it since it does not help in our analysis.
+  
+I will eliminate the Website column since it will be easier to standardize the names afterwards.
+
+</div>
+  
+```{r eliminate_Website}
+df_list <- map(df_list, function(x) if ("Website" %in% names(x)) x <- x %>% select(-Website) else x)
+```
+
+<div class = "paragraph">  
+  
+Now, the names of the columns need to be standardized. I will take them from the last dataset in the list.
+
+<div>
+
+```{r standardize_columns}
+# Names of the last data frame
+col_names <- names(df_list[[length(df_list)]])
+
+# Replacing the "." in the names with a "_"
+col_names <- col_names %>% str_replace_all("\\.", "_")
+
+# Changing Names
+df_list <- map(df_list, function(x) set_names(x, col_names))
+```
+
+<div class = "paragraph">
+
+Now the datasets are standardized so we can append them in one data frame.
+
+</div>
+
+```{r flatten_the_list}
+df <- map_df(df_list, rbind)
+```
+
+<div class = "paragraph">
+
+Let's take a look at the data.
+
+</div>
+
+```{r data_head , echo = FALSE}
+df %>%
+  head(5) %>%
+  kable(format = "html") %>%
+  kable_styling(bootstrap_options = c("striped", "hover", "condensed", "responsive"), fixed_thead = T) %>%
+  scroll_box(height = "400px")
+
+rm(df_list, col_names)
+```
+
+#### Exploratory Data Analysis
+
+<div class = "paragraph">
+
+Let's first check some summary statistics and see what can we see at first glance. First a glimpse.
+
+</div>
+
+```{r data_glimpse}
+df %>% 
+  glimpse()
+```
+
+
+
+```{r data_summary}
+df %>%
+  select(where(is.numeric)) %>%
+  summary() %>%
+  kable(format = "html") %>%
+  kable_styling(bootstrap_options = c("striped", "hover", "condensed", "responsive"), fixed_thead = T) %>%
+  scroll_box(height = "400px")
+```
+
+</hr>
+
+<div class = "paragraph">
+
+Now that we have the data it would be a good idea to inspect the data and check if we can use all of it or we need to eliminate some variables. I will use the following logic:
+
+  1. Any row that has more than 30% of the columns with missing values, I will filter it out.
+  2. Any column that has more than 30% of values missing will be eliminated.
+
+</div>
+
+```{r}
+df %>%
+  select(where(is.numeric)) %>%
+  summary()
+```
+
+<div class = "paragraph">
+
+From this summary we can see some interesting facts. There is some missing data, but we can deal with it a bit later, however I can see that there are some values that are a bit extreme (64 bathrooms, 47 kitchens, 78 rooms and a price that is over one and a half million €). My guess would be that is an apartment building that is marketed in a post. Let's check by filtering on the data with more than 2 kitchens (it is highly unusual to have more than one in an apartment, and if my guess is correct, we have an apartment building, not a single apartment, it will be the same entry).
+
+</div>
+
+```{r extreme_values}
+
+df %>% filter(Kitchens > 2) 
+```
+
+
+<div class = "paragraph">
+
+So, this is not the case unfortunately, therefore I will need to inspect the odd values for each column and decide if they should be included or not in the data.
+
+The floor seems OK to me, so let's check who needs 64 bathrooms. Since it's not that uncommon to have two bathrooms in an apartment I will check which apartments have three or more bathrooms and see if it's OK or not.
+
+</div>
+
+```{r bathrooms}
+df %>% filter(Bathrooms > 2) %>% arrange(desc(Bathrooms), ID)
+```
+
+<div class = "paragraph">
+
+Here we can see some odd values specifically for the following ID's:
+
+  * **X54N0002K**: indicates that it has 64 bathrooms although the apartment only has 54 m^2^
+  * **X46K103GR**: indicates to have 42 bathrooms.
+  * **X9PI1000K**, **X9PI10044** and **X9PI1004V**: they appear to be the same apartment and to have 11 bathrooms and to be situated at the 14^th^ floor of a building built in 1990. To my knowledge in Cluj-Napoca there were no building built that high then, so I think we can safely eliminate this entry.
+  * **X5NQ10029**: 7 bathrooms is a bit much.
+  * **X8261001P**: is an apartment block so I will eliminate it
+  
+The rest of them seem to work out as they are either penthouses or really large apartments. SO we will eliminate anything with more than 6 bathrooms
+
+</div>
+
+```{r bathrooms_filter}
+df <- df %>%
+  filter(Bathrooms <= 6 | is.na(Bathrooms))
+```
+
+```{r}
+df %>%
+  select(where(is.numeric)) %>%
+  summary()
+```
+
+<div class = "paragraph">
+
+Next issue is with the number of kitchens. Again, I will take a look at the apartments with more than 2 kitchens. I can't imagine why you would need two in an apartments, however, let's assume that they have a legit reason for that. I will check anything more than that.
+
+</div>
+
+```{r kitchens}
+df %>% filter(Kitchens > 2) %>% arrange(desc(Kitchens), ID)
+```
+
+<div class = "paragraph">
+
+I will filter out all apartments that have 3 or more kitchens since most of these seem to either have a larger number of kitchens than the number of rooms or the one that does not is in an industrial property and seems prepared for an investement either as multiple smaller apartments or office space. You can see the apartment [here](https://www.imobiliare.ro/vanzare-apartamente/cluj-napoca/bulgaria/apartament-de-vanzare-10-camere-X36D100HD?lista=175690324).
+
+</div>
+
+```{r kitchens_filter}
+df <- df %>% 
+  filter(Kitchens < 3 | is.na(Kitchens))
+```
+
+
+
+
+<div class = "paragraph">
+
+The same logic will be applied to the number of rooms.
+
+</div>
+
+```{r rooms}
+df %>% filter(Rooms > 2) %>% arrange(desc(Rooms), ID)
+```
+
+<div class = "paragraph">
+
+The range of rooms is quite large, however it appears that the apartments with up to 15 rooms report the number of rooms properly, so we will eliminate anything above that. The few cases in which they are over 15 are reporting mistakes.
+
+</div>
+
+```{r rooms_filter}
+df <- df %>% 
+  filter(Rooms <= 15 | is.na(Rooms))
+```
+
+<div class = "paragraph">
+
+I will not look at the apartments' area since that can vary by a lot and it's hard to determine where to set the cut out value. At the construction year I would like to see what is with apartment built in 2100.
+
+</div>
+
+```{r construction_year}
+df %>% filter(Construction_Year > 2022)
+```
+
+<div class = "paragraph">
+
+It's an apartment that has the wrong input. Also, it does not provide a lot of additional information so I will eliminate it. We can also see some apartments that are quite old, XVIII sec. This is possible although very highly unlikely and since I have no way of knowing which are real and which not, I will leave them on.
+
+</div>
+
+```{r construction_year_filter}
+df <- df %>% filter(Construction_Year < 2022 | is.na(Construction_Year))
+```
+
+
+```{r}
+df %>%
+  select(where(is.numeric)) %>%
+  summary() 
+```
+
+
+<div class = "paragraph">
+
+For the number of balconies I see that one apartment has 11 of them. This seems highly unlikely since most apartments have one or two. So let's check the ones with more.
+
+</div>
+
+```{r balconies}
+df %>% filter(Balconies > 2) %>% arrange(desc(Balconies), ID) %>% View()
+```
+
+
+<div class = "paragraph">
+
+I can see two apartments that are problematic, the first two in the list. Most likely the number is one
+
+</div>
+
+```{r}
+df %>% filter((ID == "X54N000A0" | ID == "X57Q100EP") &  Balconies > 2) %>% View()
+```
+
