@@ -1,0 +1,288 @@
+---
+title: "Housing Market Cleaning - Apartments"
+output: html_document
+css: article.css
+---
+
+```{r setup_general, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE, comment = "#>", collapse = TRUE, message = FALSE)
+```
+
+```{r setup_libraries}
+
+library(dplyr)
+library(purrr)
+library(tidyr)
+library(stringr)
+library(kableExtra)
+```
+
+<div class = "paragraph">
+
+In this article I will try to disentangle and clean the data taken from the [imobiliare.ro](imobiliare.ro) website. The data is messy and I would like to use this document to record all I have done in order to clean it so it can be discussed later. Before all that, I would like to explain a little bit how I acquired the data and what problems I have encountered in doing so. This might help clarify some of the problems and inconsistencies within the data.
+
+</div>
+
+## The data
+
+<div class = "paragraph">
+
+The data comes from the website [imobiliare.ro](imobiliare.ro) and I used a web scrapping algorithm to get the data. The algorithm can be found at the following [GitHub repo](https://github.com/VladAluas/Housing_Market). Because it is easier to keep the data and the code separate and roll something back should it be the case, I have decided to keep the data in a separate [repo](https://github.com/VladAluas/Housing_Market_Datasets). Here you can see all the datasets I have scrapped from the website.
+
+</div>
+
+<div class = "paragraph">
+
+As you might have noticed the data was downloaded once a week, specifically on Tuesday. There is no particular reason for that, I just wanted to download the data once a week and the first download was on Tuesday, so I continued with that.
+
+The last data download was on the 29^th^ of September. The website changed it's structure shortly after that and I will need to adjust the the web scrapping algorithm to do so. I did not have time to deal with it at the moment. When I will be able to tackle that I will add more data.
+
+</div>
+
+<div class = "paragraph">
+
+I will expose the code I have used to clean the data so it can be reproduced or discussed at a later date.
+
+</div>
+
+## Data Cleaning Logic
+
+#### Data ingestion
+
+```{r data_ingestion}
+df_list <- map(list.files(paste(getwd(), "_Datasets", sep = ""), pattern = "Apartamente", full.names = TRUE), read.csv)
+```
+
+#### Integrating all the datasets into one
+
+<div class = "paragraph">
+
+There are some problems with the data that I would like to address and list the steps I consider as necessary to clean the data.
+
+1. The web scrapping script suffered some changes over time and the columns differ slightly across the files. Most problematic are the following columns:
+  * **Construction Year**: At first I let the column name in Romanian and that resulted in some problems later due to my OS not recognizing the characters so I decided to change the name to English
+  * **Parking Spots**: This column at first appears as **Parking Places**. I cannot recall why the change in name occurred, however, we will need to correct this as well.
+  * **Website**: In the latest datasets I've added a column containing the web page in which one can see the offer. I will eliminate it since it does not help in our analysis.
+  
+I will eliminate the Website column since it will be easier to standardize the names afterwards.
+
+</div>
+  
+```{r eliminate_Website}
+df_list <- map(df_list, function(x) if ("Website" %in% names(x)) x <- x %>% select(-Website) else x)
+```
+
+<div class = "paragraph">  
+  
+Now, the names of the columns need to be standardized. I will take them from the last dataset in the list.
+
+<div>
+
+```{r standardize_columns}
+# Names of the last data frame
+col_names <- names(df_list[[length(df_list)]])
+
+# Replacing the "." in the names with a "_"
+col_names <- col_names %>% str_replace_all("\\.", "_")
+
+# Changing Names
+df_list <- map(df_list, function(x) set_names(x, col_names))
+```
+
+<div class = "paragraph">
+
+Now the datasets are standardized so we can append them in one data frame.
+
+</div>
+
+```{r flatten_the_list}
+df <- map_df(df_list, rbind)
+```
+
+<div class = "paragraph">
+
+Let's take a look at the data.
+
+</div>
+
+```{r data_head , echo = FALSE}
+df %>%
+  head(5) %>%
+  kable(format = "html") %>%
+  kable_styling(bootstrap_options = c("striped", "hover", "condensed", "responsive"), fixed_thead = T) %>%
+  scroll_box(height = "400px")
+
+rm(df_list, col_names)
+```
+
+<div class = "paragraph">
+
+We can also summarize the numerical data so we can get a better understanding of how the data looks like.
+
+</div>
+
+```{r int_data_summary}
+df %>%
+  select(where(is.numeric)) %>%
+  summary() %>%
+  kable(format = "html") %>%
+  kable_styling(bootstrap_options = c("striped", "hover", "condensed", "responsive"), fixed_thead = T) %>%
+  scroll_box(height = "400px")
+```
+<div class = "paragraph">
+
+From the start we can see that there are some extreme values (*e.g.* 47 kitchens, 78 rooms, *etc*) and missing values, some of which are easily resolvable (*e.g.* Garages, Parking_Spots), some of them are harder to do so (*e.g.* Price, Latitude, Longitude) and some are in between.
+
+Let's start with the easy part and that would be filling in missing values and the transformations before proceeding to eliminate extreme values. We will also get the height regiment in a more useful format by getting the numeric value from the column. 
+
+So, for this part we will apply the following transformations:
+  
+  * **Floor:** Since all the values in this column are numerical, we can assume that most missing values from here come from the fact that the ground floor is marked as **P** in Romania and the software did not know how to convert to a number so I will replace them with **0**
+  * **Bathrooms:** We will assume that all apartments have at least one bathroom so if a value is missing I will replace it with **1**.
+  * **Kitchens:** We will use the same logic as above and if a value is missing I will replace it with **1**
+  * **Rooms:** The same logic as above although since just one entry is affected by this we can replace it without much of an impact on the data
+  * **\*Area:** This is a bit tricky since we cannot estimate an area just as easy. However, we can use a median value to estimate the area. The average will be affected by extreme values like **784 m^2^** usable area.
+  * **Construction_Year:** We can safely use the same logic for the construction year without impacting the data in a major way.
+  * **Balconies, Garages, Parking_Spots:** This is quite straight forward, and apartment either has one of these facilities or it doesn't so we will replace the missing values with **0**
+  * **Price and Geographical Coordinates:** They are harder to estimate since they are variables with want to explain through the others. We will eliminate them from this data set, if they are missing, however, we can store them separately and we can try to predict them later on the road.
+  * **Height_Regiment:** We will extract the digits from the string and convert them to numeric then fill in the missing values with the median
+  
+</div>
+
+```{r clean_test_datasets}
+df_test <- df %>% filter(is.na(Price) | is.na(Latitude))
+
+df <- df %>% 
+        mutate(Height_Regiment = as.numeric(str_extract_all(Height_Regiment, "[0-9]+")),
+               across(c("Bathrooms", "Kitchens", "Rooms"), ~ ifelse(is.na(.), 1, .)),
+               across(c("Built_Area", "Usable_Area", "Total_Usable_Area", "Construction_Year", "Height_Regiment"), ~ ifelse(is.na(.), median(., na.rm = T), .)),
+               across(c("Balconies", "Garages", "Parking_Spots", "Floor"), ~ ifelse(is.na(.), 0, .))) %>%
+        filter(!is.na(Price), !is.na(Latitude))
+```
+
+<div class = "paragraph">
+
+Now that we have missing values figured out, let us try an deal with the extreme values. It is highly unlikely that an apartment will have 47 kitchens, one or two at most, maybe if you have a penthouse or an apartment that was split for multiple families, however not more that that. That particular case is an apartment building that is labeled as a single apartment. I assume that the owner wanted to let the customers know that he has multiple properties available. 
+
+In order to avoid such outliers, most people can afford just one apartment, not an entire building we will try to focus on the trends that impact normal people. So I will filter out all those properties that have some characteristics closer to the average that 3 standard errors. The characteristics in question will be
+
+  * Number of Bathrooms
+  * Number of Kitchens
+  * Number of Rooms
+  * Built_Area
+  * Usable_Area
+  * Total_Usable_Area
+  * Parking_Spots
+  * The Price
+
+The rest of them don't have any extreme values that will impact the analysis.
+
+</div>
+
+```{r remove_outliers}
+df <- df %>%
+  filter(across(where(is.numeric), ~ between(scale(.), -3, 3)))
+```
+
+<div class = "paragraph">
+
+Now we have the numerical data cleaned up. Let's check it one more time
+
+</div>
+
+```{r int_clean_data_summary}
+df %>%
+  select(where(is.numeric)) %>%
+  summary() %>%
+  kable(format = "html") %>%
+  kable_styling(bootstrap_options = c("striped", "hover", "condensed", "responsive"), fixed_thead = T) %>%
+  scroll_box(height = "400px")
+```
+
+<div class="paragraph">
+
+Now, it will be a good idea to deal with the character columns as well. We can start by trimming the special characters from the start and the end of the word.
+
+Secondly, I will like to point out that these columns are not all the same, **Compartments** and **Comfort** have a very specific order and each data type has it's own place in the hierarchy. Therefore we will add that.
+
+And for the missing values we will use the following logic:
+  
+  * **Compartments** and **Comfort** and correlated so we can deduce the value of one if we have the other
+  * **Others** we will add the mode where the data is missing
+  * **Compartments** has multiple ways of addressing the same type of apartment so we will transform the name.
+  
+</div>
+
+```{r factor_col}
+comp_fct <- c("decomandat", "semidecomandat", "nedecomandat")
+comf_fct <- c("lux", "1", "2", "3")
+
+
+df <- df %>% 
+  mutate(Compartments = ifelse(Compartments == "vagon", "nedecomandat", Compartments),
+         Compartments = ifelse(Compartments == "circular", "semidecomandat", Compartments),
+         Compartments = factor(Compartments, levels = comp_fct),
+         Comfort      = factor(Comfort,      levels = comf_fct))
+
+rm(comp_fct, comf_fct)
+```
+
+<div class="paragraph">
+
+Now, for the second part of the cleaning, we will see how they correlate to each other and then transform the columns.
+
+</div>
+
+```{r}
+df %>%
+  select(Comfort, Compartments) %>%
+  mutate(Compartments = ifelse(is.na(Compartments),
+                               ifelse(Comfort == "lux" | Comfort == "1", "decomandat", NA),
+                               Compartments)) %>%
+  View()
+```
+
+```{r}
+df %>%
+  mutate(across(where(is.character), ~ str_trim(., "both")),
+         Compartments = ifelse(Compartments == "vagon", "nedecomandat", Compartments),
+         Compartments = ifelse(Compartments == "circular", "semidecomandat", Compartments),
+         Compartments = ifelse(#Condition
+                               is.na(Compartments),  
+                               
+                               # THEN
+                               ifelse(Comfort == "lux" | Comfort == "1", "decomandat",
+                               ifelse(Comfort == "2", "semidecomandat",
+                               ifelse(Comfort == "3", "nedecomandat", NA))),
+                              
+                               # ELSE
+                               Compartments),
+         
+         Comfort = ifelse(is.na(Comfort),
+                          
+                          ifelse(Compartments == "decomandat"    , "1",
+                          ifelse(Compartments == "semidecomandat", "2",
+                          ifelse(Compartments == "nedecomandat"  , "3", NA))),
+                          
+                          Comfort)) %>%
+  filter(is.na(Compartments)) %>%
+  summarise(n())
+```
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
